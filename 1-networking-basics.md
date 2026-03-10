@@ -245,3 +245,215 @@ The router translates **private IPs → public IP** when sending traffic to the 
 - IPv6 uses **128 bits (~340 undecillion addresses)**
 - IPv6 was introduced because **IPv4 addresses were exhausted**
 - Most devices use **private IP + NAT** instead of direct public IP
+
+# Networking Basics — Round 3: Port Numbers
+
+## What is a Port Number?
+
+An **IP address identifies a machine**, but a machine can run **multiple services or applications simultaneously**.
+
+A **port number identifies the specific service or application running on a device**.
+
+When a client sends a request to a server, the request must reach the **correct application**, not just the correct machine.
+
+Therefore, networking uses the combination:
+
+```
+(IP Address, Port Number)
+```
+
+Example:
+
+```
+142.250.183.14:443
+```
+
+Where:
+
+- `142.250.183.14` → Server IP address
+- `443` → HTTPS service
+
+---
+
+# Why Ports Are Needed
+
+A single server may run many services at the same time:
+
+| Service | Port |
+|------|------|
+| Web Server (HTTP) | 80 |
+| Secure Web (HTTPS) | 443 |
+| SSH | 22 |
+| Email (SMTP) | 25 |
+| MySQL Database | 3306 |
+
+Without ports, the operating system would **not know which service should receive incoming network traffic**.
+
+---
+
+# Port Range
+
+Port numbers are **16-bit integers**.
+
+Total possible ports:
+
+```
+2^16 = 65,536
+```
+
+Range:
+
+```
+0 – 65535
+```
+
+---
+
+# Categories of Ports
+
+Ports are divided into three categories.
+
+## 1. Well-Known Ports
+
+Range:
+
+```
+0 – 1023
+```
+
+Reserved for common system services.
+
+Examples:
+
+| Port | Service |
+|------|------|
+| 80 | HTTP |
+| 443 | HTTPS |
+| 22 | SSH |
+| 25 | SMTP |
+| 53 | DNS |
+
+---
+
+## 2. Registered Ports
+
+Range:
+
+```
+1024 – 49151
+```
+
+Used by applications and software services.
+
+Examples:
+
+| Port | Service |
+|------|------|
+| 3306 | MySQL |
+| 5432 | PostgreSQL |
+| 8080 | Alternative HTTP |
+
+---
+
+## 3. Ephemeral Ports
+
+Range:
+
+```
+49152 – 65535
+```
+
+These are **temporary ports automatically assigned by the operating system** when a client initiates a connection.
+
+Example:
+
+```
+Client: 192.168.1.10:53001
+Server: google.com:443
+```
+
+Here:
+
+- `53001` → ephemeral port chosen by the OS
+- `443` → server's HTTPS port
+
+---
+
+# How a Connection is Identified
+
+A network connection is uniquely identified by **four values (4-tuple)**:
+
+```
+(Source IP, Source Port, Destination IP, Destination Port)
+```
+
+Example:
+
+```
+192.168.1.10:53001 → 142.250.183.14:443
+```
+
+This allows multiple connections to exist simultaneously.
+
+---
+
+# Multiple Browser Tabs Example
+
+Suppose two browser tabs connect to the same website:
+
+```
+https://google.com
+```
+
+Both connect to:
+
+```
+google.com:443
+```
+
+But the OS assigns **different ephemeral ports**.
+
+Example:
+
+Connection 1
+
+```
+192.168.1.10:53001 → google.com:443
+```
+
+Connection 2
+
+```
+192.168.1.10:53002 → google.com:443
+```
+
+Because the **source ports differ**, the operating system can differentiate between the two connections.
+
+---
+
+# Real World Importance
+
+Port numbers allow:
+
+- Multiple applications on one server
+- Thousands of simultaneous network connections
+- Web browsers opening many tabs
+- Microservices communicating on different ports
+- Load balancers forwarding traffic correctly
+
+---
+
+# Interview Cheat Sheet
+
+Key points to remember:
+
+- IP address identifies a **machine**
+- Port identifies a **specific service/application**
+- Ports are **16-bit numbers (0–65535)**
+- Well-known ports: **0–1023**
+- Ephemeral ports: **49152–65535**
+- A connection is uniquely identified by:
+
+```
+(Source IP, Source Port, Destination IP, Destination Port)
+```
