@@ -536,6 +536,444 @@ This can crash the backend.
 
 ---
 
+# Cache Failure Patterns in Distributed Systems
+
+Caching improves system performance, reduces database load, and lowers latency.
+However, poorly designed caching systems can introduce serious failure patterns that may overload backend systems.
+
+Three major cache-related failure scenarios frequently discussed in system design are:
+
+* Cache Penetration
+* Cache Breakdown (Cache Stampede / Hot Key Expiry)
+* Cache Avalanche
+
+Understanding these problems and their mitigation strategies is essential for building scalable systems.
+
+---
+
+# 1. Cache Penetration
+
+## Definition
+
+Cache penetration occurs when requests are made for **data that does not exist in the database**.
+
+Because the data does not exist:
+
+* Cache lookup fails
+* Database query is executed
+* Database returns `null`
+* Result is not cached
+
+Future requests repeat the same process.
+
+This leads to unnecessary database load.
+
+---
+
+## Request Flow
+
+```
+Client Request (user_id = 999999)
+        │
+        ▼
+Check Cache
+        │
+        ▼
+Cache Miss
+        │
+        ▼
+Query Database
+        │
+        ▼
+Data Not Found
+        │
+        ▼
+Return Null
+```
+
+Since the result is not cached, every request follows the same path.
+
+---
+
+## Example Scenario
+
+An attacker sends requests for random IDs.
+
+```
+user:999111
+user:999112
+user:999113
+user:999114
+```
+
+Flow:
+
+```
+Requests
+   │
+   ▼
+Cache Miss
+   │
+   ▼
+Database Query
+   │
+   ▼
+Database Overload
+```
+
+This can be exploited as a **denial-of-service attack** against the database.
+
+---
+
+## Solutions
+
+### Cache Null Results
+
+When the database returns `null`, cache a placeholder value.
+
+Example:
+
+```
+Key: user:999999
+Value: NULL
+TTL: 5 minutes
+```
+
+Future requests will hit the cache instead of the database.
+
+---
+
+### Bloom Filter
+
+A Bloom Filter is a probabilistic data structure that helps determine whether a key **may exist**.
+
+Flow:
+
+```
+Incoming Request
+        │
+        ▼
+Bloom Filter Check
+        │
+   ┌────┴─────┐
+   ▼          ▼
+Not Present   Possibly Present
+   │          │
+   ▼          ▼
+Reject      Query Cache
+```
+
+If the Bloom Filter says the key definitely does not exist, the request is rejected early.
+
+---
+
+### Input Validation
+
+Validate request parameters before querying cache or database.
+
+Examples:
+
+* Reject invalid user IDs
+* Reject malformed queries
+
+---
+
+# 2. Cache Breakdown (Cache Stampede / Hot Key Expiry)
+
+## Definition
+
+Cache breakdown occurs when a **highly popular key (hot key)** expires and many requests attempt to rebuild the cache simultaneously.
+
+Since the key is requested very frequently, all incoming requests miss the cache and hit the database.
+
+---
+
+## Request Flow
+
+```
+Hot Key: product:123
+TTL Expired
+        │
+        ▼
+Thousands of Requests
+        │
+        ▼
+Cache Miss
+        │
+        ▼
+All Requests Query Database
+        │
+        ▼
+Database Overload
+```
+
+---
+
+## Example Scenario
+
+Consider a trending product page.
+
+```
+Key: product:123
+Traffic: 100,000 requests per second
+```
+
+When the cache expires:
+
+```
+Cache Entry Expired
+        │
+        ▼
+100,000 Requests
+        │
+        ▼
+100,000 Database Queries
+```
+
+This can easily overwhelm the database.
+
+---
+
+## Solutions
+
+### Request Coalescing (Single Flight)
+
+Allow only **one request** to fetch data from the database.
+
+Other requests wait until the first request populates the cache.
+
+```
+Cache Miss
+     │
+     ▼
+First Request → Query Database
+Other Requests → Wait
+     │
+     ▼
+Cache Updated
+     │
+     ▼
+All Requests Served from Cache
+```
+
+---
+
+### Distributed Lock / Mutex
+
+Use a lock to ensure only one process rebuilds the cache.
+
+```
+Cache Miss
+     │
+     ▼
+Acquire Lock
+     │
+     ▼
+Fetch Data from Database
+     │
+     ▼
+Update Cache
+     │
+     ▼
+Release Lock
+```
+
+Other requests wait until the cache is updated.
+
+---
+
+### Never Expire Hot Keys
+
+For extremely popular keys, disable TTL.
+
+```
+product:123 → no expiration
+```
+
+The application updates the cache manually when the underlying data changes.
+
+---
+
+### Background Cache Refresh
+
+Refresh cache entries before they expire.
+
+```
+Cache Entry Near Expiry
+        │
+        ▼
+Background Refresh
+        │
+        ▼
+Cache Updated
+```
+
+This prevents sudden expiration spikes.
+
+---
+
+# 3. Cache Avalanche
+
+## Definition
+
+Cache avalanche occurs when **many cache entries expire at the same time**, causing a massive spike in database queries.
+
+---
+
+## Example Scenario
+
+Cache entries have identical expiration times.
+
+```
+product1 TTL = 10 minutes
+product2 TTL = 10 minutes
+product3 TTL = 10 minutes
+product4 TTL = 10 minutes
+```
+
+When they expire simultaneously:
+
+```
+Mass Expiration
+       │
+       ▼
+Thousands of Cache Misses
+       │
+       ▼
+Database Queries Spike
+       │
+       ▼
+Database Crash
+```
+
+---
+
+## Real System Scenario
+
+If cache is populated during system startup:
+
+```
+Cache populated at startup
+All keys have same TTL
+```
+
+Later:
+
+```
+All cache entries expire together
+```
+
+This leads to sudden database overload.
+
+---
+
+## Solutions
+
+### Randomized TTL
+
+Add randomness to expiration time.
+
+Instead of:
+
+```
+TTL = 10 minutes
+```
+
+Use:
+
+```
+TTL = 10 minutes ± random(0–5 minutes)
+```
+
+Example:
+
+```
+product1 TTL = 9 minutes
+product2 TTL = 11 minutes
+product3 TTL = 13 minutes
+product4 TTL = 10 minutes
+```
+
+This spreads expiration events over time.
+
+---
+
+### Multi-Level Cache
+
+Use layered caching.
+
+Architecture:
+
+```
+Client
+  │
+  ▼
+Application Server
+  │
+  ▼
+Local Cache (in-memory)
+  │
+  ▼
+Distributed Cache
+  │
+  ▼
+Database
+```
+
+Even if the distributed cache fails, the local cache absorbs traffic.
+
+---
+
+### Rate Limiting
+
+Limit requests during cache failures.
+
+```
+Cache Failure
+      │
+      ▼
+Rate Limiter
+      │
+      ▼
+Controlled Database Traffic
+```
+
+---
+
+### Circuit Breaker
+
+Temporarily stop database calls if the backend is overloaded.
+
+```
+Database Overloaded
+        │
+        ▼
+Circuit Breaker Activated
+        │
+        ▼
+Serve Fallback Response
+```
+
+---
+
+# Summary
+
+| Problem           | Cause                           | Result                | Common Solutions                 |
+| ----------------- | ------------------------------- | --------------------- | -------------------------------- |
+| Cache Penetration | Requests for nonexistent data   | Continuous DB queries | Cache null values, Bloom filters |
+| Cache Breakdown   | Hot key expires                 | Sudden DB spike       | Request coalescing, locks        |
+| Cache Avalanche   | Many keys expire simultaneously | Massive DB overload   | Random TTL, multi-level cache    |
+
+---
+
+# Key Takeaways
+
+* Caching significantly improves performance but introduces new failure scenarios.
+* Systems must guard against penetration, stampede, and avalanche patterns.
+* Defensive techniques such as Bloom filters, request coalescing, randomized TTLs, and multi-level caching are essential in large-scale systems.
+
+---
+
 # 14. Request Coalescing
 
 Solution to stampede.
